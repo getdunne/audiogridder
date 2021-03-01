@@ -152,15 +152,8 @@ class AudioGridderPluginListComponent::TableModel : public TableListBoxModel {
 
 AudioGridderPluginListComponent::AudioGridderPluginListComponent(AudioPluginFormatManager& manager,
                                                                  KnownPluginList& listToEdit, std::set<String>& exList,
-                                                                 const File& deadMansPedal, PropertiesFile* const props,
-                                                                 bool allowPluginsWhichRequireAsynchronousInstantiation)
-    : formatManager(manager),
-      list(listToEdit),
-      excludeList(exList),
-      deadMansPedalFile(deadMansPedal),
-      propertiesToUse(props),
-      allowAsync(allowPluginsWhichRequireAsynchronousInstantiation),
-      numThreads(allowAsync ? 1 : 0) {
+                                                                 const File& deadMansPedal)
+    : formatManager(manager), list(listToEdit), excludeList(exList), deadMansPedalFile(deadMansPedal) {
     tableModel.reset(new TableModel(*this, listToEdit, exList));
 
     TableHeaderComponent& header = table.getHeader();
@@ -242,7 +235,7 @@ void AudioGridderPluginListComponent::removePluginItem(int index) {
             excludeList.insert(p.fileOrIdentifier);
         }
         list.removeType(p);
-        getApp().getServer().saveConfig();
+        getApp()->getServer().saveConfig();
     }
 }
 
@@ -257,7 +250,7 @@ void AudioGridderPluginListComponent::addPluginItem(int index) {
             excludeList.erase(it);
             // try to add plugin
             std::vector<String> v = {name};
-            getApp().getServer().addPlugins(v, [this, name](bool success) {
+            getApp()->getServer().addPlugins(v, [this, name](bool success) {
                 if (!success) {
                     excludeList.insert(name);
                 }
@@ -271,7 +264,7 @@ void AudioGridderPluginListComponent::rescanPluginItem(int index) {
         index -= list.getNumTypes();
         auto id = list.getBlacklistedFiles()[index];
         list.removeFromBlacklist(id);
-        getApp().getServer().saveKnownPluginList();
+        getApp()->getServer().saveKnownPluginList();
     }
 }
 

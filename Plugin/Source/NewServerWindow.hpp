@@ -5,14 +5,16 @@
  * Author: Andreas Pohl
  */
 
-#pragma once
+#ifndef NewServerWindow_hpp
 
 #include <JuceHeader.h>
+
+namespace e47 {
 
 class NewServerWindow : public TopLevelWindow, public TextButton::Listener {
   public:
     NewServerWindow(float x, float y);
-    ~NewServerWindow();
+    ~NewServerWindow() override;
 
     void paint(Graphics&) override;
 
@@ -32,3 +34,7 @@ class NewServerWindow : public TopLevelWindow, public TextButton::Listener {
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NewServerWindow)
 };
+
+}  // namespace e47
+
+#endif  // NewServerWindow_hpp

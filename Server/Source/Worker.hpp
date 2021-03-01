@@ -8,22 +8,26 @@
 #ifndef Worker_hpp
 #define Worker_hpp
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include <JuceHeader.h>
+#include <thread>
+
 #include "AudioWorker.hpp"
 #include "Message.hpp"
 #include "ScreenWorker.hpp"
-
-#include <thread>
+#include "Utils.hpp"
 
 namespace e47 {
 
 class Server;
 
-class Worker : public Thread {
+class Worker : public Thread, public LogTag {
   public:
-    Worker(StreamingSocket* clnt) : Thread("Worker"), m_client(clnt) {}
-    virtual ~Worker();
-    virtual void run() override;
+    static std::atomic_uint32_t count;
+    static std::atomic_uint32_t runCount;
+
+    Worker(StreamingSocket* clnt);
+    ~Worker() override;
+    void run() override;
 
     void shutdown();
 
@@ -35,6 +39,7 @@ class Worker : public Thread {
     void handleMessage(std::shared_ptr<Message<Mouse>> msg);
     void handleMessage(std::shared_ptr<Message<Key>> msg);
     void handleMessage(std::shared_ptr<Message<GetPluginSettings>> msg);
+    void handleMessage(std::shared_ptr<Message<SetPluginSettings>> msg);
     void handleMessage(std::shared_ptr<Message<BypassPlugin>> msg);
     void handleMessage(std::shared_ptr<Message<UnbypassPlugin>> msg);
     void handleMessage(std::shared_ptr<Message<ExchangePlugins>> msg);
@@ -42,15 +47,24 @@ class Worker : public Thread {
     void handleMessage(std::shared_ptr<Message<Preset>> msg);
     void handleMessage(std::shared_ptr<Message<ParameterValue>> msg);
     void handleMessage(std::shared_ptr<Message<GetParameterValue>> msg);
+    void handleMessage(std::shared_ptr<Message<GetAllParameterValues>> msg);
+    void handleMessage(std::shared_ptr<Message<UpdateScreenCaptureArea>> msg);
+    void handleMessage(std::shared_ptr<Message<Rescan>> msg);
+    void handleMessage(std::shared_ptr<Message<Restart>> msg);
+    void handleMessage(std::shared_ptr<Message<CPULoad>> msg);
+    void handleMessage(std::shared_ptr<Message<PluginList>> msg);
 
   private:
     std::unique_ptr<StreamingSocket> m_client;
-    AudioWorker m_audio;
-    ScreenWorker m_screen;
+    std::shared_ptr<AudioWorker> m_audio;
+    std::shared_ptr<ScreenWorker> m_screen;
     bool m_shouldHideEditor = false;
     std::atomic_bool m_shutdown{false};
+    MessageFactory m_msgFactory;
 
-    String getStringFrom(const PluginDescription& d);
+    bool m_noPluginListFilter = false;
+
+    ENABLE_ASYNC_FUNCTORS();
 };
 
 }  // namespace e47

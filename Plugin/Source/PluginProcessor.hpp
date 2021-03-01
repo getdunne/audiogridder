@@ -7,30 +7,36 @@
 
 #pragma once
 
-#include "../JuceLibraryCode/JuceHeader.h"
-#include "Client.hpp"
-
+#include <JuceHeader.h>
 #include <set>
 
-class AudioGridderAudioProcessor : public AudioProcessor {
+#include "Client.hpp"
+#include "NumberConversion.hpp"
+#include "Utils.hpp"
+#include "json.hpp"
+
+using json = nlohmann::json;
+
+namespace e47 {
+
+class AudioGridderAudioProcessor : public AudioProcessor, public LogTagDelegate {
   public:
     AudioGridderAudioProcessor();
-    ~AudioGridderAudioProcessor();
+    ~AudioGridderAudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
 
-#ifndef JucePlugin_PreferredChannelConfigurations
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
-#endif
+
+    template <typename T>
+    void processBlockReal(AudioBuffer<T>& buf, MidiBuffer& midi);
 
     void processBlock(AudioBuffer<float>& buf, MidiBuffer& midi) override { processBlockReal(buf, midi); }
     void processBlock(AudioBuffer<double>& buf, MidiBuffer& midi) override { processBlockReal(buf, midi); }
+
     void processBlockBypassed(AudioBuffer<float>& buf, MidiBuffer& midi) override;
     void processBlockBypassed(AudioBuffer<double>& buf, MidiBuffer& midi) override;
-
-    template <typename T>
-    void processBlockReal(AudioBuffer<T>&, MidiBuffer&);
 
     void updateLatency(int samples);
 
@@ -55,11 +61,25 @@ class AudioGridderAudioProcessor : public AudioProcessor {
     void getStateInformation(MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    void updateTrackProperties(const TrackProperties& properties) override {
+        traceScope();
+        std::lock_guard<std::mutex> lock(m_trackPropertiesMtx);
+        m_trackProperties = properties;
+    }
+
+    TrackProperties getTrackProperties() {
+        traceScope();
+        std::lock_guard<std::mutex> lock(m_trackPropertiesMtx);
+        return m_trackProperties;
+    }
+
+    void loadConfig();
+    void loadConfig(const json& j, bool isUpdate = false);
     void saveConfig(int numOfBuffers = -1);
 
-    e47::Client& getClient() { return m_client; }
+    Client& getClient() { return *m_client; }
     std::vector<ServerPlugin> getPlugins(const String& type) const;
-    const std::vector<ServerPlugin>& getPlugins() const { return m_client.getPlugins(); }
+    const std::vector<ServerPlugin>& getPlugins() const { return m_client->getPlugins(); }
     std::set<String> getPluginTypes() const;
 
     struct LoadedPlugin {
@@ -67,15 +87,31 @@ class AudioGridderAudioProcessor : public AudioProcessor {
         String name;
         String settings;
         StringArray presets;
-        Array<e47::Client::Parameter> params;
-        bool bypassed;
-        bool ok;
+        Array<Client::Parameter> params;
+        bool bypassed = false;
+        bool ok = false;
     };
 
-    auto& getLoadedPlugins() const { return m_loadedPlugins; }
-    const LoadedPlugin& getLoadedPlugin(int idx) const { return idx > -1 ? m_loadedPlugins[idx] : m_unusedDummyPlugin; }
-    bool loadPlugin(const String& id, const String& name);
+    // Called by the client object to trigger resyncing the remote plugin settings
+    void sync();
+
+    enum SyncRemoteMode { SYNC_ALWAYS, SYNC_WITH_EDITOR, SYNC_DISABLED };
+    SyncRemoteMode getSyncRemoteMode() const { return m_syncRemote; }
+    void setSyncRemoteMode(SyncRemoteMode m) { m_syncRemote = m; }
+
+    // auto& getLoadedPlugins() const { return m_loadedPlugins; }
+    int getNumOfLoadedPlugins() {
+        std::lock_guard<std::mutex> lock(m_loadedPluginsSyncMtx);
+        return (int)m_loadedPlugins.size();
+    }
+    LoadedPlugin& getLoadedPlugin(int idx) {
+        std::lock_guard<std::mutex> lock(m_loadedPluginsSyncMtx);
+        return idx > -1 && idx < (int)m_loadedPlugins.size() ? m_loadedPlugins[(size_t)idx] : m_unusedDummyPlugin;
+    }
+
+    bool loadPlugin(const String& id, const String& name, String& err);
     void unloadPlugin(int idx);
+    String getLoadedPluginsString() const;
     void editPlugin(int idx);
     void hidePlugin(bool updateServer = true);
     int getActivePlugin() const { return m_activePlugin; }
@@ -85,23 +121,58 @@ class AudioGridderAudioProcessor : public AudioProcessor {
     void exchangePlugins(int idxA, int idxB);
     bool enableParamAutomation(int idx, int paramIdx, int slot = -1);
     void disableParamAutomation(int idx, int paramIdx);
+    void getAllParameterValues(int idx);
+    void increaseSCArea();
+    void decreaseSCArea();
+    void toggleFullscreenSCArea();
+
+    void storeSettingsA();
+    void storeSettingsB();
+    void restoreSettingsA();
+    void restoreSettingsB();
+    void resetSettingsAB();
+
+    bool getMenuShowCategory() const { return m_menuShowCategory; }
+    void setMenuShowCategory(bool b) { m_menuShowCategory = b; }
+    bool getMenuShowCompany() const { return m_menuShowCompany; }
+    void setMenuShowCompany(bool b) { m_menuShowCompany = b; }
+    bool getGenericEditor() const { return m_genericEditor; }
+    void setGenericEditor(bool b) { m_genericEditor = b; }
+    bool getConfirmDelete() const { return m_confirmDelete; }
+    void setConfirmDelete(bool b) { m_confirmDelete = b; }
+    bool getNoSrvPluginListFilter() const { return m_noSrvPluginListFilter; }
+    void setNoSrvPluginListFilter(bool b) { m_noSrvPluginListFilter = b; }
+    float getScaleFactor() const { return m_scale; }
+    void setScaleFactor(float f) { m_scale = f; }
 
     auto& getServers() const { return m_servers; }
-    void addServer(const String& s) { m_servers.push_back(s); }
-    void delServer(int idx);
-    int getActiveServer() const { return m_activeServer; }
-    void setActiveServer(int i);
+    void addServer(const String& s) { m_servers.add(s); }
+    void delServer(const String& s);
+    String getActiveServerHost() const { return m_client->getServerHostAndID(); }
+    String getActiveServerName() const;
+    void setActiveServer(const ServerInfo& s);
+    Array<ServerInfo> getServersMDNS();
+    void setCPULoad(float load);
 
-    int getLatencyMillis() const { return m_client.NUM_OF_BUFFERS * getBlockSize() * 1000 / getSampleRate(); }
+    int getLatencyMillis() const {
+        return as<int>(lround(m_client->NUM_OF_BUFFERS * getBlockSize() * 1000 / getSampleRate()));
+    }
 
-    // It looks like most hosts do not support dynamic parameter creation or changes to existing parameters. Just the
-    // name can be updated. So we create slots at the start.
-    class Parameter : public AudioProcessorParameter {
+    // It looks like most hosts do not support dynamic parameter creation or changes to existing parameters. Logic
+    // at least allows for the name to be updated. So we create slots at the start.
+    class Parameter : public AudioProcessorParameter, public LogTagDelegate {
       public:
-        Parameter(AudioGridderAudioProcessor& processor, int slot) : m_processor(processor), m_slotId(slot) {}
+        Parameter(AudioGridderAudioProcessor& processor, int slot) : m_processor(processor), m_slotId(slot) {
+            setLogTagSource(m_processor.getLogTagSource());
+            initAsyncFunctors();
+        }
+        ~Parameter() override {
+            traceScope();
+            stopAsyncFunctors();
+        }
         float getValue() const override;
         void setValue(float newValue) override;
-        float getValueForText(const String& text) const override { return 0; };
+        float getValueForText(const String& /* text */) const override { return 0; }
         float getDefaultValue() const override { return getParam().defaultValue; }
         String getName(int maximumStringLength) const override;
         String getLabel() const override { return getParam().label; }
@@ -119,28 +190,52 @@ class AudioGridderAudioProcessor : public AudioProcessor {
         int m_slotId = 0;
 
         const LoadedPlugin& getPlugin() const { return m_processor.getLoadedPlugin(m_idx); }
-        const e47::Client::Parameter& getParam() const { return getPlugin().params.getReference(m_paramIdx); }
+        const Client::Parameter& getParam() const { return getPlugin().params.getReference(m_paramIdx); }
 
         void reset() {
             m_idx = -1;
             m_paramIdx = 0;
         }
+
+        ENABLE_ASYNC_FUNCTORS();
     };
 
   private:
-    e47::Client m_client;
+    Uuid m_instId;
+    std::unique_ptr<Client> m_client;
+    std::atomic_bool m_prepared{false};
     std::vector<LoadedPlugin> m_loadedPlugins;
+    mutable std::mutex m_loadedPluginsSyncMtx;
     int m_activePlugin = -1;
-    std::vector<String> m_servers;
-    int m_activeServer = 0;
+    StringArray m_servers;
+    String m_activeServerFromCfg;
+    int m_activeServerLegacyFromCfg;
 
     int m_numberOfAutomationSlots = 16;
     LoadedPlugin m_unusedDummyPlugin;
-    e47::Client::Parameter m_unusedParam;
+    Client::Parameter m_unusedParam;
 
     Array<Array<float>> m_bypassBufferF;
     Array<Array<double>> m_bypassBufferD;
     std::mutex m_bypassBufferMtx;
 
+    String m_settingsA, m_settingsB;
+
+    bool m_menuShowCategory = true;
+    bool m_menuShowCompany = true;
+    bool m_genericEditor = false;
+    bool m_confirmDelete = true;
+    bool m_noSrvPluginListFilter = false;
+    float m_scale = 1.0;
+
+    TrackProperties m_trackProperties;
+    std::mutex m_trackPropertiesMtx;
+
+    SyncRemoteMode m_syncRemote = SYNC_WITH_EDITOR;
+
+    ENABLE_ASYNC_FUNCTORS();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioGridderAudioProcessor)
 };
+
+}  // namespace e47

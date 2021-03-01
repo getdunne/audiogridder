@@ -8,7 +8,8 @@
 #ifndef PluginListWindow_hpp
 #define PluginListWindow_hpp
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include <JuceHeader.h>
+
 #include "PluginListComponent.hpp"
 
 namespace e47 {
@@ -18,7 +19,7 @@ class App;
 class PluginListWindow : public DocumentWindow {
   public:
     PluginListWindow(App* app, KnownPluginList& list, const String& deadMansPedalFile);
-    ~PluginListWindow() { clearContentComponent(); }
+    ~PluginListWindow() override;
 
     void closeButtonPressed() override;
 

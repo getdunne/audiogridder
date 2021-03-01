@@ -5,9 +5,10 @@
  * Author: Andreas Pohl
  */
 
-#include "PluginListWindow.hpp"
 #include "App.hpp"
+#include "PluginListWindow.hpp"
 #include "Server.hpp"
+#include "WindowPositions.hpp"
 
 namespace e47 {
 
@@ -21,13 +22,20 @@ PluginListWindow::PluginListWindow(App* app, KnownPluginList& list, const String
     setUsingNativeTitleBar(true);
     m_plugmgr.addDefaultFormats();
     setContentOwned(new AudioGridderPluginListComponent(m_plugmgr, m_pluginlist, m_app->getServer().getExcludeList(),
-                                                        m_deadMansPedalFile, nullptr, false),
+                                                        m_deadMansPedalFile),
                     true);
 
     setResizable(true, false);
     centreWithSize(700, 600);
+    setBounds(WindowPositions::get(WindowPositions::ServerPlugins, getBounds()));
 
     setVisible(true);
+    windowToFront(this);
+}
+
+PluginListWindow::~PluginListWindow() {
+    WindowPositions::set(WindowPositions::ServerPlugins, getBounds());
+    clearContentComponent();
 }
 
 void PluginListWindow::closeButtonPressed() { m_app->hidePluginList(); }

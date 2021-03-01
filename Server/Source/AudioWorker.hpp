@@ -8,9 +8,13 @@
 #ifndef AudioWorker_hpp
 #define AudioWorker_hpp
 
-#include "../JuceLibraryCode/JuceHeader.h"
-#include "ProcessorChain.hpp"
+#include <JuceHeader.h>
 #include <thread>
+#include <unordered_map>
+
+#include "ProcessorChain.hpp"
+#include "Message.hpp"
+#include "Utils.hpp"
 
 namespace e47 {
 
@@ -22,41 +26,55 @@ struct audio_chunk_hdr_t {
 
 class ProcessorChain;
 
-class AudioWorker : public Thread {
+class AudioWorker : public Thread, public LogTagDelegate {
   public:
-    AudioWorker() : Thread("AudioWorker") { m_chain = std::make_shared<ProcessorChain>(); }
-    virtual ~AudioWorker();
+    static std::atomic_uint32_t count;
+    static std::atomic_uint32_t runCount;
 
-    void init(std::unique_ptr<StreamingSocket> s, int channels, double rate, int samplesPerBlock, bool doublePrecission,
-              std::function<void()> fn);
+    AudioWorker(LogTag* tag);
+    virtual ~AudioWorker() override;
+
+    void init(std::unique_ptr<StreamingSocket> s, int channelsIn, int channelsOut, double rate, int samplesPerBlock,
+              bool doublePrecission);
 
     void run() override;
     void shutdown();
     void clear();
 
-    bool addPlugin(const String& id);
+    int getChannelsIn() const { return m_channelsIn; }
+    int getChannelsOut() const { return m_channelsOut; }
+
+    bool addPlugin(const String& id, String& err);
     void delPlugin(int idx);
     void exchangePlugins(int idxA, int idxB);
-    std::shared_ptr<AudioPluginInstance> getProcessor(int idx) const { return m_chain->getProcessor(idx); }
+    std::shared_ptr<AGProcessor> getProcessor(int idx) const { return m_chain->getProcessor(idx); }
     int getSize() const { return static_cast<int>(m_chain->getSize()); }
     int getLatencySamples() const { return m_chain->getLatencySamples(); }
+    void update() { m_chain->update(); }
 
     float getParameterValue(int idx, int paramIdx) { return m_chain->getParameterValue(idx, paramIdx); }
 
-    using RecentsListType = Array<PluginDescription>;
-    RecentsListType& getRecentsList(String host) const;
+    struct ComparablePluginDescription : PluginDescription {
+        ComparablePluginDescription(const PluginDescription& other) : PluginDescription(other) {}
+        bool operator==(const ComparablePluginDescription& other) const { return isDuplicateOf(other); }
+    };
+
+    using RecentsListType = Array<ComparablePluginDescription>;
+    String getRecentsList(String host) const;
     void addToRecentsList(const String& id, const String& host);
 
   private:
     std::unique_ptr<StreamingSocket> m_socket;
-    int m_channels;
+    int m_channelsIn;
+    int m_channelsOut;
     double m_rate;
     int m_samplesPerBlock;
     bool m_doublePrecission;
     std::shared_ptr<ProcessorChain> m_chain;
-    static HashMap<String, RecentsListType> m_recents;
+    static std::unordered_map<String, RecentsListType> m_recents;
     static std::mutex m_recentsMtx;
-    std::function<void()> m_onTerminate;
+
+    ENABLE_ASYNC_FUNCTORS();
 };
 
 }  // namespace e47

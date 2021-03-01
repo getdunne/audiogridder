@@ -6,11 +6,14 @@
  */
 
 #include "NewServerWindow.hpp"
+#include "NumberConversion.hpp"
 
 #include <JuceHeader.h>
 
+namespace e47 {
+
 NewServerWindow::NewServerWindow(float x, float y) : TopLevelWindow("New Server", true) {
-    setBounds(x, y, 196, 70);
+    setBounds(e47::as<int>(lroundf(x)), e47::as<int>(lroundf(y)), 196, 70);
 
     addChildAndSetID(&m_server, "server");
     m_server.setBounds(5, 5, 188, 25);
@@ -47,3 +50,5 @@ void NewServerWindow::activeWindowStatusChanged() {
         delete this;
     }
 }
+
+}  // namespace e47
